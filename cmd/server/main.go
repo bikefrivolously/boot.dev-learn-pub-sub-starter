@@ -3,12 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
+	"github.com/bikefrivolously/boot.dev-learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bikefrivolously/boot.dev-learn-pub-sub-starter/internal/pubsub"
 	"github.com/bikefrivolously/boot.dev-learn-pub-sub-starter/internal/routing"
 )
@@ -32,26 +30,39 @@ func main() {
 		return
 	}
 
-	exchange := routing.ExchangePerilDirect
-	key := routing.PauseKey
-	val, err := json.Marshal(routing.PlayingState{IsPaused: true})
-	if err != nil {
-		fmt.Printf("error marshalling value: %v\n", err)
-		return
+	gamelogic.PrintServerHelp()
+	running := true
+	for running {
+		inputWords := gamelogic.GetInput()
+		switch inputWords[0] {
+		case "pause":
+			pubPause(channel, true)
+		case "resume":
+			pubPause(channel, false)
+		case "quit":
+			running = false
+		default:
+			fmt.Printf("unrecognized command: %s\n", inputWords[0])
+		}
 	}
-
-	err = pubsub.PublishJSON(channel, exchange, key, val)
-	if err != nil {
-		fmt.Printf("error publishing json: %v\n", err)
-		return
-	}
-
-	shutdownSig := make(chan os.Signal, 1)
-	signal.Notify(shutdownSig, syscall.SIGTERM, syscall.SIGINT)
-	<-shutdownSig
 }
 
 func shutdown(conn *amqp.Connection) {
 	defer conn.Close()
 	fmt.Println("Shutting down Peril server...")
+}
+
+func pubPause(c *amqp.Channel, paused bool) error {
+	exchange := routing.ExchangePerilDirect
+	key := routing.PauseKey
+	val, err := json.Marshal(routing.PlayingState{IsPaused: paused})
+	if err != nil {
+		return fmt.Errorf("error marshalling value: %w\n", err)
+	}
+
+	err = pubsub.PublishJSON(c, exchange, key, val)
+	if err != nil {
+		return fmt.Errorf("error publishing json: %w\n", err)
+	}
+	return nil
 }
