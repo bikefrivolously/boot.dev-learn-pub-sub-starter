@@ -19,7 +19,7 @@ func main() {
 
 	conn, err := amqp.Dial(amqpConnection)
 	if err != nil {
-		fmt.Printf("unable to connect to AMQP server %s, %w\n", amqpConnection, err)
+		fmt.Printf("unable to connect to AMQP server %s, %v\n", amqpConnection, err)
 		return
 	}
 	defer shutdown(conn)
