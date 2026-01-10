@@ -72,7 +72,9 @@ func DeclareAndBind(
 		exclusive = true
 		noWait = false
 	}
-	q, err := channel.QueueDeclare(queueName, durable, autoDelete, exclusive, noWait, nil)
+	args := make(amqp.Table)
+	args["x-dead-letter-exchange"] = "peril_dlx"
+	q, err := channel.QueueDeclare(queueName, durable, autoDelete, exclusive, noWait, args)
 	if err != nil {
 		return nil, amqp.Queue{}, fmt.Errorf("error creating queue: %w", err)
 	}
@@ -112,13 +114,13 @@ func SubscribeJSON[T any](
 			ackType := handler(body)
 			switch ackType {
 			case Ack:
-				fmt.Println("Ack", d)
+				fmt.Println("Ack")
 				d.Ack(false)
 			case NackRequeue:
-				fmt.Println("NackReque", d)
+				fmt.Println("NackReque")
 				d.Nack(false, true)
 			default:
-				fmt.Println("NackDiscard", d)
+				fmt.Println("NackDiscard")
 				d.Nack(false, false)
 			}
 		}
