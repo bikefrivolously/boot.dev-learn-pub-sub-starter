@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -67,12 +66,9 @@ func shutdown(conn *amqp.Connection) {
 func pubPause(c *amqp.Channel, paused bool) error {
 	exchange := routing.ExchangePerilDirect
 	key := routing.PauseKey
-	val, err := json.Marshal(routing.PlayingState{IsPaused: paused})
-	if err != nil {
-		return fmt.Errorf("error marshalling value: %w\n", err)
-	}
+	ps := routing.PlayingState{IsPaused: paused}
 
-	err = pubsub.PublishJSON(c, exchange, key, val)
+	err := pubsub.PublishJSON(c, exchange, key, ps)
 	if err != nil {
 		return fmt.Errorf("error publishing json: %w\n", err)
 	}
