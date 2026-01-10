@@ -29,20 +29,21 @@ func main() {
 		return
 	}
 
+	gameState := gamelogic.NewGameState(userName)
 	queueName := routing.PauseKey + "." + userName
-	_, _, err = pubsub.DeclareAndBind(
+
+	err = pubsub.SubscribeJSON(
 		conn,
 		routing.ExchangePerilDirect,
 		queueName,
 		routing.PauseKey,
 		pubsub.QueueTypeTransient,
+		handlerPause(gameState),
 	)
 	if err != nil {
-		fmt.Printf("error creating or binding queue: %v\n", err)
+		fmt.Printf("error subscribing to JSON pause queue: %v\n", err)
 		return
 	}
-
-	gameState := gamelogic.NewGameState(userName)
 
 	running := true
 	for running {
@@ -78,4 +79,12 @@ func main() {
 func shutdown(conn *amqp.Connection) {
 	defer conn.Close()
 	fmt.Println("Shutting down Peril client...")
+}
+
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	f := func(ps routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(ps)
+	}
+	return f
 }
