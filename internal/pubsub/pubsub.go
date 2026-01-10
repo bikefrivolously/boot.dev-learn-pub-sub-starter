@@ -9,10 +9,17 @@ import (
 )
 
 type SimpleQueueType int
+type AckType int
 
 const (
 	QueueTypeDurable SimpleQueueType = iota
 	QueueTypeTransient
+)
+
+const (
+	Ack AckType = iota
+	NackRequeue
+	NackDiscard
 )
 
 func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
@@ -83,7 +90,7 @@ func SubscribeJSON[T any](
 	queueName,
 	key string,
 	queueType SimpleQueueType, // an enum to represent "durable" or "transient"
-	handler func(T),
+	handler func(T) AckType,
 ) error {
 	channel, queue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
@@ -98,12 +105,22 @@ func SubscribeJSON[T any](
 		for d := range deliveryChan {
 			var body T
 			dErr := json.Unmarshal(d.Body, &body)
-			if err != nil {
+			if dErr != nil {
 				fmt.Printf("error unmarshalling message into type %T: %v", body, dErr)
+				continue
+			}
+			ackType := handler(body)
+			switch ackType {
+			case Ack:
+				fmt.Println("Ack", d)
+				d.Ack(false)
+			case NackRequeue:
+				fmt.Println("NackReque", d)
+				d.Nack(false, true)
+			default:
+				fmt.Println("NackDiscard", d)
 				d.Nack(false, false)
 			}
-			handler(body)
-			d.Ack(false)
 		}
 	}()
 	return nil
