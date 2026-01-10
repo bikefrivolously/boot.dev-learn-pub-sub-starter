@@ -58,7 +58,7 @@ func main() {
 		movesQueueName,
 		routing.ArmyMovesPrefix+".*",
 		pubsub.QueueTypeTransient,
-		handlerMove(gameState),
+		handlerMove(gameState, channel),
 	)
 	if err != nil {
 		fmt.Printf("error subscribing to JSON pause queue: %v\n", err)
@@ -118,14 +118,28 @@ func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) pubsub.Ack
 	return f
 }
 
-func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) pubsub.AckType {
+func handlerMove(gs *gamelogic.GameState, channel *amqp.Channel) func(gamelogic.ArmyMove) pubsub.AckType {
 	f := func(move gamelogic.ArmyMove) pubsub.AckType {
 		defer fmt.Print("> ")
 		outcome := gs.HandleMove(move)
-		if outcome == gamelogic.MoveOutComeSafe || outcome == gamelogic.MoveOutcomeMakeWar {
+		switch outcome {
+		case gamelogic.MoveOutComeSafe:
 			return pubsub.Ack
+		case gamelogic.MoveOutcomeMakeWar:
+			msg := gamelogic.RecognitionOfWar{
+				Attacker: move.Player,
+				Defender: gs.GetPlayerSnap(),
+			}
+			exchange := routing.ExchangePerilTopic
+			key := routing.WarRecognitionsPrefix + "." + gs.GetUsername()
+			pubsub.PublishJSON(channel, exchange, key, msg)
+			return pubsub.NackRequeue
+
+		case gamelogic.MoveOutcomeSamePlayer:
+			return pubsub.NackDiscard
+		default:
+			return pubsub.NackDiscard
 		}
-		return pubsub.NackDiscard
 	}
 	return f
 }
