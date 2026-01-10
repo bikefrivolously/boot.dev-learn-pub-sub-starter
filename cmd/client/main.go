@@ -38,6 +38,7 @@ func main() {
 	gameState := gamelogic.NewGameState(userName)
 	pauseQueueName := routing.PauseKey + "." + userName
 	movesQueueName := routing.ArmyMovesPrefix + "." + userName
+	warQueueName := routing.WarRecognitionsPrefix
 
 	err = pubsub.SubscribeJSON(
 		conn,
@@ -61,7 +62,20 @@ func main() {
 		handlerMove(gameState, channel),
 	)
 	if err != nil {
-		fmt.Printf("error subscribing to JSON pause queue: %v\n", err)
+		fmt.Printf("error subscribing to JSON moves queue: %v\n", err)
+		return
+	}
+
+	err = pubsub.SubscribeJSON(
+		conn,
+		routing.ExchangePerilTopic,
+		warQueueName,
+		routing.WarRecognitionsPrefix+".*",
+		pubsub.QueueTypeDurable,
+		handlerWar(gameState),
+	)
+	if err != nil {
+		fmt.Printf("error subscribing to JSON war queue: %v\n", err)
 		return
 	}
 
@@ -132,12 +146,33 @@ func handlerMove(gs *gamelogic.GameState, channel *amqp.Channel) func(gamelogic.
 			}
 			exchange := routing.ExchangePerilTopic
 			key := routing.WarRecognitionsPrefix + "." + gs.GetUsername()
-			pubsub.PublishJSON(channel, exchange, key, msg)
-			return pubsub.NackRequeue
-
+			err := pubsub.PublishJSON(channel, exchange, key, msg)
+			if err != nil {
+				return pubsub.NackRequeue
+			}
+			return pubsub.Ack
 		case gamelogic.MoveOutcomeSamePlayer:
 			return pubsub.NackDiscard
 		default:
+			return pubsub.NackDiscard
+		}
+	}
+	return f
+}
+
+func handlerWar(gs *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub.AckType {
+	f := func(rw gamelogic.RecognitionOfWar) pubsub.AckType {
+		outcome, _, _ := gs.HandleWar(rw)
+		switch outcome {
+		case gamelogic.WarOutcomeNotInvolved:
+			// we're not involved, let another client pick this up
+			return pubsub.NackRequeue
+		case gamelogic.WarOutcomeNoUnits:
+			return pubsub.NackDiscard
+		case gamelogic.WarOutcomeDraw, gamelogic.WarOutcomeOpponentWon, gamelogic.WarOutcomeYouWon:
+			return pubsub.Ack
+		default:
+			fmt.Printf("error, unknown war outcome: %v\n", outcome)
 			return pubsub.NackDiscard
 		}
 	}
