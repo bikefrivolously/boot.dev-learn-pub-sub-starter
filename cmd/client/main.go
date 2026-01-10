@@ -2,9 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
@@ -45,9 +42,37 @@ func main() {
 		return
 	}
 
-	shutdownSig := make(chan os.Signal, 1)
-	signal.Notify(shutdownSig, syscall.SIGTERM, syscall.SIGINT)
-	<-shutdownSig
+	gameState := gamelogic.NewGameState(userName)
+
+	running := true
+	for running {
+		inputWords := gamelogic.GetInput()
+		switch inputWords[0] {
+		case "spawn":
+			err := gameState.CommandSpawn(inputWords)
+			if err != nil {
+				fmt.Printf("error in spawn command: %v\n", err)
+			}
+		case "move":
+			move, err := gameState.CommandMove(inputWords)
+			if err != nil {
+				fmt.Printf("error in move command: %v\n", err)
+				continue
+			}
+			fmt.Printf("move: %s %d\n", move.ToLocation, len(move.Units))
+		case "status":
+			gameState.CommandStatus()
+		case "help":
+			gamelogic.PrintClientHelp()
+		case "spam":
+			fmt.Println("Spamming not allowed yet!")
+		case "quit":
+			gamelogic.PrintQuit()
+			running = false
+		default:
+			fmt.Println("unrecognized command")
+		}
+	}
 }
 
 func shutdown(conn *amqp.Connection) {

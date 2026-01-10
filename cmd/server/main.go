@@ -24,6 +24,18 @@ func main() {
 
 	fmt.Printf("Connected to AMQP server: %s\n", amqpConnection)
 
+	_, _, err = pubsub.DeclareAndBind(
+		conn,
+		routing.ExchangePerilTopic,
+		routing.GameLogSlug,
+		routing.GameLogSlug+".*",
+		pubsub.QueueTypeDurable,
+	)
+	if err != nil {
+		fmt.Printf("error declaring or binding queue: %v\n", err)
+		return
+	}
+
 	channel, err := conn.Channel()
 	if err != nil {
 		fmt.Printf("error creating channel: %v\n", err)
