@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
@@ -72,7 +73,7 @@ func main() {
 		warQueueName,
 		routing.WarRecognitionsPrefix+".*",
 		pubsub.QueueTypeDurable,
-		handlerWar(gameState),
+		handlerWar(gameState, channel),
 	)
 	if err != nil {
 		fmt.Printf("error subscribing to JSON war queue: %v\n", err)
@@ -160,16 +161,35 @@ func handlerMove(gs *gamelogic.GameState, channel *amqp.Channel) func(gamelogic.
 	return f
 }
 
-func handlerWar(gs *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub.AckType {
+func handlerWar(gs *gamelogic.GameState, channel *amqp.Channel) func(gamelogic.RecognitionOfWar) pubsub.AckType {
 	f := func(rw gamelogic.RecognitionOfWar) pubsub.AckType {
-		outcome, _, _ := gs.HandleWar(rw)
+		outcome, winner, loser := gs.HandleWar(rw)
 		switch outcome {
 		case gamelogic.WarOutcomeNotInvolved:
 			// we're not involved, let another client pick this up
 			return pubsub.NackRequeue
 		case gamelogic.WarOutcomeNoUnits:
 			return pubsub.NackDiscard
-		case gamelogic.WarOutcomeDraw, gamelogic.WarOutcomeOpponentWon, gamelogic.WarOutcomeYouWon:
+		case gamelogic.WarOutcomeDraw:
+			msg := fmt.Sprintf("A war between %s and %s resulted in a draw", winner, loser)
+			err := pubGameLog(channel, gs.GetUsername(), msg)
+			if err != nil {
+				return pubsub.NackRequeue
+			}
+			return pubsub.Ack
+		case gamelogic.WarOutcomeOpponentWon:
+			msg := fmt.Sprintf("%s won a war against %s", winner, loser)
+			err := pubGameLog(channel, gs.GetUsername(), msg)
+			if err != nil {
+				return pubsub.NackRequeue
+			}
+			return pubsub.Ack
+		case gamelogic.WarOutcomeYouWon:
+			msg := fmt.Sprintf("%s won a war against %s", winner, loser)
+			err := pubGameLog(channel, gs.GetUsername(), msg)
+			if err != nil {
+				return pubsub.NackRequeue
+			}
 			return pubsub.Ack
 		default:
 			fmt.Printf("error, unknown war outcome: %v\n", outcome)
@@ -177,4 +197,15 @@ func handlerWar(gs *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub
 		}
 	}
 	return f
+}
+
+func pubGameLog(ch *amqp.Channel, userName, msg string) error {
+	exchange := routing.ExchangePerilTopic
+	key := routing.GameLogSlug + "." + userName
+	gl := routing.GameLog{
+		CurrentTime: time.Now(),
+		Message:     msg,
+		Username:    userName,
+	}
+	return pubsub.PublishGob(ch, exchange, key, gl)
 }
