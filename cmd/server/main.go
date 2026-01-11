@@ -23,15 +23,16 @@ func main() {
 
 	fmt.Printf("Connected to AMQP server: %s\n", amqpConnection)
 
-	_, _, err = pubsub.DeclareAndBind(
+	err = pubsub.SubscribeGob(
 		conn,
 		routing.ExchangePerilTopic,
 		routing.GameLogSlug,
 		routing.GameLogSlug+".*",
 		pubsub.QueueTypeDurable,
+		handlerGameLog(),
 	)
 	if err != nil {
-		fmt.Printf("error declaring or binding queue: %v\n", err)
+		fmt.Printf("error subscribing to gamelog queue: %v\n", err)
 		return
 	}
 
@@ -73,4 +74,17 @@ func pubPause(c *amqp.Channel, paused bool) error {
 		return fmt.Errorf("error publishing json: %w\n", err)
 	}
 	return nil
+}
+
+func handlerGameLog() func(routing.GameLog) pubsub.AckType {
+	f := func(gl routing.GameLog) pubsub.AckType {
+		defer fmt.Print("> ")
+		err := gamelogic.WriteLog(gl)
+		if err != nil {
+			fmt.Printf("error writing gamelog: %v", err)
+			return pubsub.NackRequeue
+		}
+		return pubsub.Ack
+	}
+	return f
 }
