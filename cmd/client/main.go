@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -109,7 +110,19 @@ func main() {
 		case "help":
 			gamelogic.PrintClientHelp()
 		case "spam":
-			fmt.Println("Spamming not allowed yet!")
+			if len(inputWords) != 2 {
+				fmt.Printf("usage: spam <number>\n")
+				continue
+			}
+			n, err := strconv.Atoi(inputWords[1])
+			if err != nil {
+				fmt.Printf("can't convert %s to number: %v\n", inputWords[1], err)
+				continue
+			}
+			for ; n > 0; n-- {
+				log := gamelogic.GetMaliciousLog()
+				pubGameLog(channel, gameState.GetUsername(), log)
+			}
 		case "quit":
 			gamelogic.PrintQuit()
 			running = false

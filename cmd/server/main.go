@@ -46,6 +46,9 @@ func main() {
 	running := true
 	for running {
 		inputWords := gamelogic.GetInput()
+		if len(inputWords) == 0 {
+			continue
+		}
 		switch inputWords[0] {
 		case "pause":
 			pubPause(channel, true)
